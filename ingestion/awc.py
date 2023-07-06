@@ -128,19 +128,71 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             )
             self.data_file_path.exists().touch()
             return []
-        with self.data_file_path.open('r') as f:
+        return self._load_data_from_file(self.data_file_path)
+
+    def _load_data_from_file(
+        self,
+        file_path: os.PathLike,
+    ) -> List[Dict[str, str]]:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File {file_path} not found")
+        with file_path.open('r') as f:
             reader = csv.DictReader(f, delimiter=',')
             return list(reader)
 
     def _dump_data(self):
-        last_ts = None
-        with self.data_file_path.open('w') as f:
+        data_by_date = {}
+        for row in self.data:
+            dt = datetime.fromtimestamp(int(row['timestamp']))
+            date = dt.strftime("%Y%m%d")
+            if date not in data_by_date:
+                data_by_date[date] = []
+            data_by_date[date].append(row)
+        if len(data_by_date.keys()) > 1:
+            logger.warning(
+                f"Downloader contains data from "
+                f"{len(data_by_date.keys())} days: "
+                f"{data_by_date.keys()}"
+            )
+            # Dump deduplicated previous data
+            previous_date = sorted(data_by_date.keys())[0]
+            previous_data_file_path = self.target_dir / f"{previous_date}.csv"
+            previous_data = self._load_data_from_file(
+                file_path=previous_data_file_path,
+            )
+            previous_data.extend(data_by_date[previous_date])
+            previous_data = self._deduplicate_data(previous_data)
+            self._dump_data_in_file(
+                previous_data,
+                previous_data_file_path,
+            )
+            # Re-ensure data file
+            self._ensure_data_file()
+            # Retain today's data only
+            self.data = data_by_date[self.today]
+        self._dump_data_in_file(self.data, self.data_file_path)
+
+    def _deduplicate_data(
+        self,
+        data: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        dedup = {}
+        for row in data:
+            if row['rawmetar'] not in dedup:
+                dedup[row['rawmetar']] = row
+        return list(dedup.values())
+
+    def _dump_data_in_file(
+        self,
+        data: List[Dict[str, str]],
+        file_path: os.PathLike,
+    ):
+        file_path = Path(file_path)
+        with file_path.open('w') as f:
             writer = csv.DictWriter(f, fieldnames=self.FIELDS, delimiter=',')
             writer.writeheader()
-            for row in self.data:
-                # if row['timestamp'] == last_ts:
-                #     continue
-                # last_ts = row['timestamp']
+            for row in data:
                 writer.writerow(row)
 
     def download1(self, stations_to_search: List[Station]) -> bool:
