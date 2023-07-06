@@ -5,10 +5,10 @@ import anylearn
 from ingestion import fetch_stations, AwcWeatherStationDataDownloader
 
 
-if os.environ.get('ANYLEARN_TASK_ID', None) is not None:
-    data_workspace = anylearn.get_dataset("yhuang/MRMS").download()
-else:
-    data_workspace = "./data"
+# if os.environ.get('ANYLEARN_TASK_ID', None) is not None:
+#     data_workspace = anylearn.get_dataset("yhuang/MRMS").download()
+# else:
+#     data_workspace = "./data"
 
 
 def run():
