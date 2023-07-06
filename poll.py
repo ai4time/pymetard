@@ -12,10 +12,19 @@ from ingestion import fetch_stations, AwcWeatherStationDataDownloader
 
 
 def run():
-    stations = fetch_stations()
-    downloader = AwcWeatherStationDataDownloader(target_dir="./output")
-    for station in stations.values():
-        downloader.download1(station=station)
+    stations = fetch_stations() # 9319 stations
+    downloader = AwcWeatherStationDataDownloader(
+        stations=stations,
+        target_dir="./output",
+    )
+
+    # URL length limit ~8000
+    # while each station = 4 digits code + 1 comma encoded in %2C
+    CHUNK_SIZE = 1050
+
+    for i in range(0, len(stations.keys()), CHUNK_SIZE):
+        candidates = list(stations.values())[i:i+CHUNK_SIZE]
+        downloader.download1(stations_to_search=candidates)
 
 
 if __name__ == "__main__":

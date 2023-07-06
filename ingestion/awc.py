@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import requests
@@ -104,9 +104,11 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
 
     def __init__(
             self,
+            stations: Dict[str, Station],
             target_dir: os.PathLike = "data",
         ):
         super().__init__()
+        self.stations = stations
         self.target_dir = Path(target_dir)
         self.target_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_data_file()
@@ -141,10 +143,10 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
                 # last_ts = row['timestamp']
                 writer.writerow(row)
 
-    def download1(self, station: Station) -> bool:
+    def download1(self, stations_to_search: List[Station]) -> bool:
         base_url = "https://www.aviationweather.gov/metar/data"
         params = {
-            'ids': station.code4,
+            'ids': ",".join([s.code4 for s in stations_to_search]),
             'format': "raw",
             'hours': 0,
             'taf': "off",
@@ -155,20 +157,29 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
         res.raise_for_status()
 
         soup = BeautifulSoup(res.text, 'html.parser')
-        if not soup.find('code'):
-            logger.warning(f"[{station.code4}] No data found.")
-            return False
+        for element in soup.find_all('code'):
+            metar_raw = element.text
+            logger.info(f"Fetched raw METAR: {metar_raw}")
 
-        metar_raw = soup.find('code').text
-        logger.info(f"[{station.code4}] Fetched raw METAR: {metar_raw}")
+            data = self._fetch_data_from_raw_metar(metar_raw)
+            if data is not None:
+                self.data.append(data)
+        self._dump_data()
 
+        return True
+
+    def _fetch_data_from_raw_metar(
+        self,
+        metar_raw: str,
+    ) -> Optional[Dict[str, str]]:
         metar_decoded = Metar.Metar(metar_raw, strict=False)
+        station = self.stations[metar_decoded.station_id]
         if not self._metar_valid(metar_decoded):
             logger.warning(
                 f"[{station.code4}] METAR data invalid "
                 "with missing field around W/T/H/P."
             )
-            return False
+            return None
 
         temperature_c = metar_decoded.temp.value(units="C")
         dewpoint_c = metar_decoded.dewpt.value(units="C")
@@ -210,10 +221,8 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             f"wind={round(data['winddirection_deg'])}° "
             f"at {data['windspeed_kt']} knots"
         )
-        self.data.append(data)
-        self._dump_data()
 
-        return True
+        return data
 
     def _metar_valid(self, metar: Metar.Metar) -> bool:
         return (
