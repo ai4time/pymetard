@@ -1,3 +1,4 @@
 anylearn>=0.17.0
 beautifulsoup4==4.12.2
+metar==1.10.0
 requests
