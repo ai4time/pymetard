@@ -3,7 +3,10 @@ import time
 
 import anylearn
 
-from ingestion import fetch_stations, AwcWeatherStationDataDownloader
+from ingestion import (
+    fetch_stations,
+    AwcWeatherStationDataDownloader,
+)
 
 
 if os.environ.get('ANYLEARN_TASK_ID', None) is not None:
@@ -26,8 +29,11 @@ def run():
     while True:
         for i in range(0, len(stations.keys()), CHUNK_SIZE):
             candidates = list(stations.values())[i:i+CHUNK_SIZE]
-            downloader.download1(stations_to_search=candidates)
-        time.sleep(60)
+            downloader.download1(
+                stations_to_search=candidates,
+                hours=1,
+            )
+        time.sleep(600)
 
 
 if __name__ == "__main__":

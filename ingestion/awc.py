@@ -195,18 +195,29 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             for row in data:
                 writer.writerow(row)
 
-    def download1(self, stations_to_search: List[Station]) -> bool:
+    def download1(
+        self,
+        stations_to_search: List[Station],
+        hours: int = 0,
+    ) -> bool:
         base_url = "https://www.aviationweather.gov/metar/data"
         params = {
             'ids': ",".join([s.code4 for s in stations_to_search]),
             'format': "raw",
-            'hours': 0,
+            'hours': hours,
             'taf': "off",
             'layout': "off",
         }
 
         res = requests.get(base_url, params=params)
-        res.raise_for_status()
+        if res.status_code != 200:
+            logger.error(
+                f"Failed to fetch data from {base_url} "
+                f"with params {params}. "
+                f"Status code: {res.status_code}. "
+                f"Response: {res.text}"
+            )
+            return False
 
         soup = BeautifulSoup(res.text, 'html.parser')
         for element in soup.find_all('code'):

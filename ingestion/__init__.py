@@ -15,4 +15,8 @@ from ingestion.timer import (
     TjwfTimer,
 )
 
-from ingestion.awc import fetch_stations, AwcWeatherStationDataDownloader
+from ingestion.awc import (
+    fetch_stations,
+    AwcWeatherStationDataDownloader,
+    Station,
+)
