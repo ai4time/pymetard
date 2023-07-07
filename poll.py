@@ -1,4 +1,5 @@
 import os
+import time
 
 import anylearn
 
@@ -22,9 +23,11 @@ def run():
     # while each station = 4 digits code + 1 comma encoded in %2C
     CHUNK_SIZE = 1050
 
-    for i in range(0, len(stations.keys()), CHUNK_SIZE):
-        candidates = list(stations.values())[i:i+CHUNK_SIZE]
-        downloader.download1(stations_to_search=candidates)
+    while True:
+        for i in range(0, len(stations.keys()), CHUNK_SIZE):
+            candidates = list(stations.values())[i:i+CHUNK_SIZE]
+            downloader.download1(stations_to_search=candidates)
+        time.sleep(60)
 
 
 if __name__ == "__main__":

@@ -90,9 +90,6 @@ def relative_humidity_from_dewpoint(
 
 class AwcWeatherStationDataDownloader(AbstractDownloader):
 
-    today: str = datetime.utcnow().strftime("%Y%m%d")
-    data_file_path: Path = Path(f"data/{today}.csv")
-
     FIELDS: List[str] = [
         'timestamp',
         'name', 'code', 'lng', 'lat', 'ele', # Station info
@@ -111,14 +108,20 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
         self.stations = stations
         self.target_dir = Path(target_dir)
         self.target_dir.mkdir(parents=True, exist_ok=True)
-        self._ensure_data_file()
+        self.data_file_path = self._ensure_data_file()
         self.data = self._load_data()
 
-    def _ensure_data_file(self):
-        self.today = datetime.utcnow().strftime("%Y%m%d")
-        self.data_file_path = self.target_dir / f"{self.today}.csv"
-        if not self.data_file_path.exists():
-            self.data_file_path.touch()
+    def _ensure_data_file(
+        self,
+        date: str = datetime.utcnow().strftime("%Y%m%d"),
+    ) -> Path:
+        datetime.strptime(date, "%Y%m%d") # Will raise if invalid
+        save_dir = self.target_dir / date[:4] / date[4:6]
+        save_dir.mkdir(parents=True, exist_ok=True)
+        data_file_path = save_dir / f"{date}.csv"
+        if not data_file_path.exists():
+            data_file_path.touch()
+        return data_file_path
 
     def _load_data(self) -> List[Dict[str, str]]:
         if not self.data_file_path.exists():
@@ -142,35 +145,32 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             return list(reader)
 
     def _dump_data(self):
+        self.data = self._deduplicate_data(self.data)
         data_by_date = {}
         for row in self.data:
-            dt = datetime.fromtimestamp(int(row['timestamp']))
+            dt = datetime.fromtimestamp(float(row['timestamp']))
             date = dt.strftime("%Y%m%d")
             if date not in data_by_date:
                 data_by_date[date] = []
             data_by_date[date].append(row)
         if len(data_by_date.keys()) > 1:
+            dates = sorted(data_by_date.keys())
             logger.warning(
                 f"Downloader contains data from "
-                f"{len(data_by_date.keys())} days: "
-                f"{data_by_date.keys()}"
+                f"{len(dates)} days: "
+                f"{sorted(dates)}"
             )
             # Dump deduplicated previous data
-            previous_date = sorted(data_by_date.keys())[0]
-            previous_data_file_path = self.target_dir / f"{previous_date}.csv"
-            previous_data = self._load_data_from_file(
-                file_path=previous_data_file_path,
-            )
+            previous_date = dates[0]
+            previous_data_file_path = self._ensure_data_file(previous_date)
+            previous_data = self._load_data_from_file(previous_data_file_path)
             previous_data.extend(data_by_date[previous_date])
             previous_data = self._deduplicate_data(previous_data)
-            self._dump_data_in_file(
-                previous_data,
-                previous_data_file_path,
-            )
+            self._dump_data_in_file(previous_data, previous_data_file_path)
             # Re-ensure data file
             self._ensure_data_file()
             # Retain today's data only
-            self.data = data_by_date[self.today]
+            self.data = data_by_date[dates[-1]]
         self._dump_data_in_file(self.data, self.data_file_path)
 
     def _deduplicate_data(
@@ -210,10 +210,7 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
 
         soup = BeautifulSoup(res.text, 'html.parser')
         for element in soup.find_all('code'):
-            metar_raw = element.text
-            logger.info(f"Fetched raw METAR: {metar_raw}")
-
-            data = self._fetch_data_from_raw_metar(metar_raw)
+            data = self._fetch_data_from_raw_metar(element.text)
             if data is not None:
                 self.data.append(data)
         self._dump_data()
@@ -224,10 +221,11 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
         self,
         metar_raw: str,
     ) -> Optional[Dict[str, str]]:
+        logger.debug(f"Parsing raw METAR: {metar_raw}")
         metar_decoded = Metar.Metar(metar_raw, strict=False)
         station = self.stations[metar_decoded.station_id]
         if not self._metar_valid(metar_decoded):
-            logger.warning(
+            logger.debug(
                 f"[{station.code4}] METAR data invalid "
                 "with missing field around W/T/H/P."
             )
@@ -263,7 +261,7 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             ),
             'rawmetar': metar_raw,
         }
-        logger.info(
+        logger.debug(
             f"[{station.code4}] Fetched data: "
             f"ts={data['timestamp']}, "
             f"code={data['code']}, "
