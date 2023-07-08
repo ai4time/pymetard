@@ -1,3 +1,4 @@
+import math
 import os
 import time
 from datetime import datetime
@@ -9,6 +10,7 @@ from ingestion import (
     fetch_stations,
     AwcWeatherStationDataDownloader,
 )
+from ingestion.logger import logger
 
 
 if os.environ.get('ANYLEARN_TASK_ID', None) is not None:
@@ -75,6 +77,7 @@ def fill(from_datetime, hours):
     )
     # Too much content will cause AWC to return 500
     CHUNK_SIZE = 100
+    N = math.ceil(len(stations.keys()) / CHUNK_SIZE)
     for i in range(0, len(stations.keys()), CHUNK_SIZE):
         candidates = list(stations.values())[i:i+CHUNK_SIZE]
         while not downloader.download1(
@@ -83,6 +86,7 @@ def fill(from_datetime, hours):
             hours=hours,
         ):
             time.sleep(10)
+        logger.info(f"Downloaded {int(1+i/CHUNK_SIZE)}/{N}")
         time.sleep(10)
 
 
