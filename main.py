@@ -47,10 +47,11 @@ def poll(hours, interval):
     while True:
         for i in range(0, len(stations.keys()), CHUNK_SIZE):
             candidates = list(stations.values())[i:i+CHUNK_SIZE]
-            downloader.download1(
+            while not downloader.download1(
                 stations_to_search=candidates,
                 hours=hours,
-            )
+            ):
+                time.sleep(10)
         time.sleep(interval)
 
 
@@ -76,11 +77,13 @@ def fill(from_datetime, hours):
     CHUNK_SIZE = 100
     for i in range(0, len(stations.keys()), CHUNK_SIZE):
         candidates = list(stations.values())[i:i+CHUNK_SIZE]
-        downloader.download1(
+        while not downloader.download1(
             stations_to_search=candidates,
             from_datetime=datetime.strptime(from_datetime, "%Y%m%d%H%M"),
-            hours=hours, # Max 120 hours
-        )
+            hours=hours,
+        ):
+            time.sleep(10)
+        time.sleep(10)
 
 
 if __name__ == "__main__":

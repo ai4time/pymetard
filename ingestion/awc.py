@@ -130,13 +130,22 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
         if isinstance(from_datetime, datetime):
             params['date'] = from_datetime.strftime("%Y%m%d%H%M")
 
-        res = requests.get(base_url, params=params)
-        if res.status_code != 200:
+        try:
+            res = requests.get(base_url, params=params)
+            res.raise_for_status()
+        except requests.exceptions.HTTPError as e:
             logger.error(
                 f"Failed to fetch data from {base_url} "
                 f"with params {params}. "
-                f"Status code: {res.status_code}. "
-                f"Response: {res.text}"
+                f"Status code: {e.response.status_code}."
+                f"Error: {e}"
+            )
+            return False
+        except requests.exceptions.ConnectionError as e:
+            logger.error(
+                f"Failed to connect to {base_url} "
+                f"with params {params}. "
+                f"Error: {e}"
             )
             return False
 
