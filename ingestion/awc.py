@@ -60,7 +60,10 @@ def fetch_stations(
         if len(line) != 84:
             # State/country/header line
             continue
-        code4 = line[20:24]
+        code4 = line[20:24].strip()
+        if not code4 or len(code4) != 4:
+            # Invalid code
+            continue
         stations[code4] = Station(
             state_code=line[:2],
             name=line[3:19].strip(),
@@ -108,99 +111,12 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
         self.stations = stations
         self.target_dir = Path(target_dir)
         self.target_dir.mkdir(parents=True, exist_ok=True)
-        self.data_file_path = self._ensure_data_file()
-        self.data = self._load_data()
-
-    def _ensure_data_file(
-        self,
-        date: Optional[str] = None,
-    ) -> Path:
-        if not date:
-            date = datetime.utcnow().strftime("%Y%m%d")
-        datetime.strptime(date, "%Y%m%d") # Will raise if invalid
-        save_dir = self.target_dir / date[:4] / date[4:6]
-        save_dir.mkdir(parents=True, exist_ok=True)
-        data_file_path = save_dir / f"{date}.csv"
-        if not data_file_path.exists():
-            data_file_path.touch()
-        return data_file_path
-
-    def _load_data(self) -> List[Dict[str, str]]:
-        if not self.data_file_path.exists():
-            logger.warning(
-                f"Data file {self.data_file_path} not found. "
-                "Will create an empty one."
-            )
-            self.data_file_path.exists().touch()
-            return []
-        return self._load_data_from_file(self.data_file_path)
-
-    def _load_data_from_file(
-        self,
-        file_path: os.PathLike,
-    ) -> List[Dict[str, str]]:
-        file_path = Path(file_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File {file_path} not found")
-        with file_path.open('r') as f:
-            reader = csv.DictReader(f, delimiter=',')
-            return list(reader)
-
-    def _dump_data(self):
-        self.data = self._deduplicate_data(self.data)
-        data_by_date = {}
-        for row in self.data:
-            dt = datetime.fromtimestamp(float(row['timestamp']))
-            date = dt.strftime("%Y%m%d")
-            if date not in data_by_date:
-                data_by_date[date] = []
-            data_by_date[date].append(row)
-        if len(data_by_date.keys()) > 1:
-            dates = sorted(data_by_date.keys())
-            logger.warning(
-                f"Downloader contains data from "
-                f"{len(dates)} days: "
-                f"{sorted(dates)}"
-            )
-            # Dump deduplicated previous data
-            previous_date = dates[0]
-            previous_data_file_path = self._ensure_data_file(previous_date)
-            previous_data = self._load_data_from_file(previous_data_file_path)
-            previous_data.extend(data_by_date[previous_date])
-            previous_data = self._deduplicate_data(previous_data)
-            self._dump_data_in_file(previous_data, previous_data_file_path)
-            # Re-ensure data file
-            next_date = dates[-1]
-            self.data_file_path = self._ensure_data_file(next_date)
-            # Retain today's data only
-            self.data = data_by_date[dates[-1]]
-        self._dump_data_in_file(self.data, self.data_file_path)
-
-    def _deduplicate_data(
-        self,
-        data: List[Dict[str, str]],
-    ) -> List[Dict[str, str]]:
-        dedup = {}
-        for row in data:
-            if row['rawmetar'] not in dedup:
-                dedup[row['rawmetar']] = row
-        return list(dedup.values())
-
-    def _dump_data_in_file(
-        self,
-        data: List[Dict[str, str]],
-        file_path: os.PathLike,
-    ):
-        file_path = Path(file_path)
-        with file_path.open('w') as f:
-            writer = csv.DictWriter(f, fieldnames=self.FIELDS, delimiter=',')
-            writer.writeheader()
-            for row in data:
-                writer.writerow(row)
+        self.data = []
 
     def download1(
         self,
         stations_to_search: List[Station],
+        from_datetime: Optional[datetime] = None,
         hours: int = 0,
     ) -> bool:
         base_url = "https://www.aviationweather.gov/metar/data"
@@ -211,6 +127,8 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             'taf': "off",
             'layout': "off",
         }
+        if isinstance(from_datetime, datetime):
+            params['date'] = from_datetime.strftime("%Y%m%d%H%M")
 
         res = requests.get(base_url, params=params)
         if res.status_code != 200:
@@ -297,3 +215,78 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             and metar.wind_dir is not None
             and metar.wind_speed is not None
         )
+
+    def _dump_data(self):
+        self.data = self._deduplicate_data(self.data)
+        data_by_date = self._group_data_by_date()
+        dates = sorted(data_by_date.keys())
+        logger.warning(
+            f"Downloader contains data from "
+            f"{len(dates)} days: "
+            f"{dates}"
+        )
+        # Merge data with existing data and dump them
+        for date in dates:
+            data_file_path = self._ensure_data_file(date)
+            data = self._load_data_from_file(data_file_path)
+            data.extend(data_by_date[date])
+            data = self._deduplicate_data(data)
+            self._dump_data_in_file(data, data_file_path)
+        self.data = []
+
+    def _deduplicate_data(
+        self,
+        data: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        dedup = {}
+        for row in data:
+            if row['rawmetar'] not in dedup:
+                dedup[row['rawmetar']] = row
+        return list(dedup.values())
+
+    def _group_data_by_date(self) -> Dict[str, List[Dict[str, str]]]:
+        data_by_date = {}
+        for row in self.data:
+            dt = datetime.fromtimestamp(float(row['timestamp']))
+            date = dt.strftime("%Y%m%d")
+            if date not in data_by_date:
+                data_by_date[date] = []
+            data_by_date[date].append(row)
+        return data_by_date
+
+    def _ensure_data_file(
+        self,
+        date: Optional[str] = None,
+    ) -> Path:
+        if not date:
+            date = datetime.utcnow().strftime("%Y%m%d")
+        datetime.strptime(date, "%Y%m%d") # Will raise if invalid
+        save_dir = self.target_dir / date[:4] / date[4:6]
+        save_dir.mkdir(parents=True, exist_ok=True)
+        data_file_path = save_dir / f"{date}.csv"
+        if not data_file_path.exists():
+            data_file_path.touch()
+        return data_file_path
+
+    def _load_data_from_file(
+        self,
+        file_path: os.PathLike,
+    ) -> List[Dict[str, str]]:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File {file_path} not found")
+        with file_path.open('r') as f:
+            reader = csv.DictReader(f, delimiter=',')
+            return list(reader)
+
+    def _dump_data_in_file(
+        self,
+        data: List[Dict[str, str]],
+        file_path: os.PathLike,
+    ):
+        file_path = Path(file_path)
+        with file_path.open('w') as f:
+            writer = csv.DictWriter(f, fieldnames=self.FIELDS, delimiter=',')
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
