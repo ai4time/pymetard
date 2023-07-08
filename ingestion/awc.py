@@ -113,8 +113,10 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
 
     def _ensure_data_file(
         self,
-        date: str = datetime.utcnow().strftime("%Y%m%d"),
+        date: Optional[str] = None,
     ) -> Path:
+        if not date:
+            date = datetime.utcnow().strftime("%Y%m%d")
         datetime.strptime(date, "%Y%m%d") # Will raise if invalid
         save_dir = self.target_dir / date[:4] / date[4:6]
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -168,7 +170,8 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             previous_data = self._deduplicate_data(previous_data)
             self._dump_data_in_file(previous_data, previous_data_file_path)
             # Re-ensure data file
-            self._ensure_data_file()
+            next_date = dates[-1]
+            self.data_file_path = self._ensure_data_file(next_date)
             # Retain today's data only
             self.data = data_by_date[dates[-1]]
         self._dump_data_in_file(self.data, self.data_file_path)
