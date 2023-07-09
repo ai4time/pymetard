@@ -172,8 +172,6 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             )
             return None
 
-        temperature_c = metar_decoded.temp.value(units="C")
-        dewpoint_c = metar_decoded.dewpt.value(units="C")
         data = {
             'timestamp': metar_decoded.time.timestamp(),
             'name': station.name,
@@ -181,49 +179,74 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             'lng': station.longitude,
             'lat': station.latitude,
             'ele': station.elevation,
-            'temperature_c': temperature_c,
-            'dewpoint_c': dewpoint_c,
-            'relativehumidity': relative_humidity_from_dewpoint(
-                temperature_c,
-                dewpoint_c,
-            ),
-            'pressure_mb': metar_decoded.press.value(units="MB"),
-            'pressuresea_mb': (
-                metar_decoded.press_sea_level.value(units="MB")
-                if metar_decoded.press_sea_level is not None
-                else ""
-            ),
-            'winddirection_deg': metar_decoded.wind_dir.value(),
-            'windspeed_kt': metar_decoded.wind_speed.value(units="KT"),
-            'windgust_kt': (
-                metar_decoded.wind_gust.value(units="KT")
-                if metar_decoded.wind_gust is not None
-                else ""
-            ),
+            'temperature_c': self._temperature(metar_decoded),
+            'dewpoint_c': self._dewpoint(metar_decoded),
+            'relativehumidity': self._relative_humidity(metar_decoded),
+            'pressure_mb': self._pressure(metar_decoded),
+            'pressuresea_mb': self._pressure_sea(metar_decoded),
+            'winddirection_deg': self._wind_direction(metar_decoded),
+            'windspeed_kt': self._wind_speed(metar_decoded),
+            'windgust_kt': self._wind_gust(metar_decoded),
             'rawmetar': metar_raw,
         }
         logger.debug(
             f"[{station.code4}] Fetched data: "
             f"ts={data['timestamp']}, "
             f"code={data['code']}, "
-            f"temp={data['temperature_c']}°C, "
-            f"pres={data['pressure_mb']}mb, "
-            f"rh={round(data['relativehumidity'] * 100)}%,"
-            f"wind={round(data['winddirection_deg'])}° "
-            f"at {data['windspeed_kt']} knots"
+            f"temp={data['temperature_c']}°C, " if data['temperature_c'] else ""
+            f"pres={data['pressure_mb']}mb, " if data['pressure_mb'] else ""
+            f"rh={round(data['relativehumidity'] * 100)}%," if data['relativehumidity'] else ""
+            f"wind={round(data['winddirection_deg'])}° " if data['winddirection_deg'] else ""
+            f"at {data['windspeed_kt']} knots" if data['windspeed_kt'] else ""
         )
 
         return data
 
     def _metar_valid(self, metar: Metar.Metar) -> bool:
-        return (
-            metar.time is not None
-            and metar.temp is not None
-            and metar.dewpt is not None
-            and metar.press is not None
-            and metar.wind_dir is not None
-            and metar.wind_speed is not None
+        return metar.time is not None
+
+    def _temperature(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.temp is None:
+            return None
+        return metar.temp.value(units="C")
+
+    def _dewpoint(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.dewpt is None:
+            return None
+        return metar.dewpt.value(units="C")
+
+    def _relative_humidity(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.temp is None or metar.dewpt is None:
+            return None
+        return relative_humidity_from_dewpoint(
+            metar.temp.value(units="C"),
+            metar.dewpt.value(units="C"),
         )
+
+    def _pressure(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.press is None:
+            return None
+        return metar.press.value(units="MB")
+
+    def _pressure_sea(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.press_sea_level is None:
+            return None
+        return metar.press_sea_level.value(units="MB")
+
+    def _wind_direction(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.wind_dir is None:
+            return None
+        return metar.wind_dir.value()
+
+    def _wind_speed(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.wind_speed is None:
+            return None
+        return metar.wind_speed.value(units="KT")
+
+    def _wind_gust(self, metar: Metar.Metar) -> Optional[float]:
+        if metar.wind_gust is None:
+            return None
+        return metar.wind_gust.value(units="KT")
 
     def _dump_data(self):
         self.data = self._deduplicate_data(self.data)
