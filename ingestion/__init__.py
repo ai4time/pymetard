@@ -6,4 +6,5 @@ from ingestion.metar import (
     DateRollingCsvDownloader,
     MetarCsvDownloader,
     Station,
+    WeatherGovMetarDownloader,
 )

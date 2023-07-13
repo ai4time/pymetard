@@ -147,9 +147,16 @@ class MetarCsvDownloader(DateRollingCsvDownloader):
     def _fetch_data_from_raw_metar(
         self,
         metar_raw: str,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
     ) -> Optional[Dict[str, str]]:
         logger.debug(f"Parsing raw METAR: {metar_raw}")
-        metar_decoded = Metar.Metar(metar_raw, strict=False)
+        metar_decoded = Metar.Metar(
+            metar_raw,
+            year=year,
+            month=month,
+            strict=False,
+        )
         station = self.stations[metar_decoded.station_id]
         if not self._metar_valid(metar_decoded):
             logger.debug(
@@ -280,11 +287,94 @@ class AviationWeatherCenterMetarDownloader(MetarCsvDownloader):
             )
             return False
 
-        soup = BeautifulSoup(res.text, 'html.parser')
-        for element in soup.find_all('code'):
-            data = self._fetch_data_from_raw_metar(element.text)
+        return True
+
+
+class WeatherGovMetarDownloader(MetarCsvDownloader):
+
+    def __init__(
+        self,
+        stations: Dict[str, Station],
+        target_dir: os.PathLike = "data",
+    ):
+        super().__init__(stations, target_dir)
+
+    def download1(
+        self,
+        stations_to_search: List[Station],
+        start_datetime: datetime,
+        end_datetime: datetime,
+    ) -> bool:
+        if not isinstance(start_datetime, datetime):
+            raise ValueError(
+                f"start_datetime must "
+                "be a datetime object, got {start_datetime}"
+            )
+        if not isinstance(end_datetime, datetime):
+            raise ValueError(
+                f"end_datetime must "
+                "be a datetime object, got {end_datetime}"
+            )
+        if start_datetime > end_datetime:
+            raise ValueError(
+                f"start_datetime must be before end_datetime, "
+                f"got {start_datetime} and {end_datetime}"
+            )
+        if start_datetime.month != end_datetime.month:
+            raise ValueError(
+                "start_datetime and end_datetime must be in the same month "
+                "(each METAR contains only the day of month), "
+                "otherwise METAR cannot be parsed correctly,"
+                f"got {start_datetime} and {end_datetime}"
+            )
+
+        base_url = "https://api.mesowest.net/v2/stations/timeseries"
+        params = {
+            'STID': ",".join([s.code4 for s in stations_to_search]),
+            'units': "english",
+            'start': start_datetime.strftime("%Y%m%d%H%M"),
+            'end': end_datetime.strftime("%Y%m%d%H%M"),
+            'token': "d8c6aee36a994f90857925cea26934be",
+            'complete': "1",
+        }
+
+        try:
+            res = requests.get(base_url, params=params)
+            res.raise_for_status()
+            raw_json = res.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(
+                f"Failed to fetch data from {base_url} "
+                f"with params {params}. "
+                f"Status code: {e.response.status_code}."
+                f"Error: {e}"
+            )
+            return False
+        except requests.exceptions.ConnectionError as e:
+            logger.error(
+                f"Failed to connect to {base_url} "
+                f"with params {params}. "
+                f"Error: {e}"
+            )
+            return False
+
+        raw_metars = []
+        for station in raw_json['STATION']:
+            if 'OBSERVATIONS' not in station:
+                continue
+            if 'metar_set_1' not in station['OBSERVATIONS']:
+                continue
+            raw_metars.extend(station['OBSERVATIONS']['metar_set_1'])
+
+        for raw_metar in raw_metars:
+            data = self._fetch_data_from_raw_metar(
+                raw_metar,
+                year=start_datetime.year,
+                month=start_datetime.month,
+            )
             if data is not None:
                 self.data.append(data)
+
         self._dump_data()
 
         return True

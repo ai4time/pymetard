@@ -12,4 +12,5 @@ from ingestion.metar.downloader import (
     AviationWeatherCenterMetarDownloader,
     DateRollingCsvDownloader,
     MetarCsvDownloader,
+    WeatherGovMetarDownloader,
 )

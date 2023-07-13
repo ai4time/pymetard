@@ -9,6 +9,7 @@ import click
 from ingestion import (
     fetch_stations,
     AviationWeatherCenterMetarDownloader,
+    WeatherGovMetarDownloader,
 )
 from ingestion.logger import logger
 
@@ -38,7 +39,7 @@ def main():
     help="Polling interval in seconds.",
 )
 def poll(hours, interval):
-    stations = fetch_stations() # 9319 stations
+    stations = fetch_stations() # 9318 stations
     downloader = AviationWeatherCenterMetarDownloader(
         stations=stations,
         target_dir=data_workspace,
@@ -84,6 +85,37 @@ def fill(from_datetime, hours):
             stations_to_search=candidates,
             from_datetime=datetime.strptime(from_datetime, "%Y%m%d%H%M"),
             hours=hours,
+        ):
+            time.sleep(10)
+        logger.info(f"Downloaded {int(1+i/CHUNK_SIZE)}/{N}")
+        time.sleep(10)
+
+
+@main.command()
+@click.option(
+    '--start',
+    help="Start datetime in format %Y%m%d%H%M.",
+)
+@click.option(
+    '--end',
+    help="End datetime in format %Y%m%d%H%M.",
+)
+def batch(start, end):
+    stations = fetch_stations() # 9318 stations
+    downloader = WeatherGovMetarDownloader(
+        stations=stations,
+        target_dir=data_workspace,
+    )
+    # URL length limit ~8000
+    # while each station = 4 digits code + 1 comma encoded in %2C
+    CHUNK_SIZE = 1050
+    N = math.ceil(len(stations.keys()) / CHUNK_SIZE)
+    for i in range(0, len(stations.keys()), CHUNK_SIZE):
+        candidates = list(stations.values())[i:i+CHUNK_SIZE]
+        while not downloader.download1(
+            stations_to_search=candidates,
+            start_datetime=datetime.strptime(start, "%Y%m%d%H%M"),
+            end_datetime=datetime.strptime(end, "%Y%m%d%H%M"),
         ):
             time.sleep(10)
         logger.info(f"Downloaded {int(1+i/CHUNK_SIZE)}/{N}")
