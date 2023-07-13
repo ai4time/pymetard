@@ -1,7 +1,7 @@
 import math
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import anylearn
 import click
@@ -101,25 +101,56 @@ def fill(from_datetime, hours):
     help="End datetime in format %Y%m%d%H%M.",
 )
 def batch(start, end):
+    start = datetime.strptime(start, "%Y%m%d%H%M")
+    end = datetime.strptime(end, "%Y%m%d%H%M")
+    if start > end:
+        raise ValueError("Start datetime must be earlier than end datetime.")
+
     stations = fetch_stations() # 9318 stations
     downloader = WeatherGovMetarDownloader(
         stations=stations,
         target_dir=data_workspace,
     )
+
     # URL length limit ~8000
     # while each station = 4 digits code + 1 comma encoded in %2C
     CHUNK_SIZE = 1050
     N = math.ceil(len(stations.keys()) / CHUNK_SIZE)
-    for i in range(0, len(stations.keys()), CHUNK_SIZE):
-        candidates = list(stations.values())[i:i+CHUNK_SIZE]
-        while not downloader.download1(
-            stations_to_search=candidates,
-            start_datetime=datetime.strptime(start, "%Y%m%d%H%M"),
-            end_datetime=datetime.strptime(end, "%Y%m%d%H%M"),
-        ):
+
+    _start = start
+    if start.day == end.day:
+        _end = end
+    else:
+        _end = datetime(
+            year=_start.year,
+            month=_start.month,
+            day=_start.day,
+            hour=23,
+            minute=59,
+        )
+    while _end <= end:
+        for i in range(0, len(stations.keys()), CHUNK_SIZE):
+            candidates = list(stations.values())[i:i+CHUNK_SIZE]
+            while not downloader.download1(
+                stations_to_search=candidates,
+                start_datetime=_start,
+                end_datetime=_end,
+            ):
+                time.sleep(10)
+            logger.info(f"Range {_start} to {_end}")
+            logger.info(f"Downloaded {int(1+i/CHUNK_SIZE)}/{N}")
             time.sleep(10)
-        logger.info(f"Downloaded {int(1+i/CHUNK_SIZE)}/{N}")
-        time.sleep(10)
+        _start = _end + timedelta(minutes=1)
+        if _start.day == end.day:
+            _end = end
+        else:
+            _end = datetime(
+                year=_start.year,
+                month=_start.month,
+                day=_start.day,
+                hour=23,
+                minute=59,
+            )
 
 
 if __name__ == "__main__":
