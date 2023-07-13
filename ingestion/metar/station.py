@@ -58,9 +58,9 @@ def fetch_stations(
             state_code=line[:2],
             name=line[3:19].strip(),
             code4=code4,
-            latitude=_lat(line[39:46]),
+            latitude=_lat(line[39:45]),
             longitude=_lng(line[47:54]),
-            elevation=line[55:59].strip(),
+            elevation=float(line[55:59].strip()),
             raw=line,
         )
     return stations
