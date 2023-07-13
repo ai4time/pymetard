@@ -1,3 +1,4 @@
+import abc
 import csv
 import os
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ import requests
 from bs4 import BeautifulSoup
 from metar import Metar
 
-from ingestion import AbstractDownloader
 from ingestion.logger import logger
 
 
@@ -91,7 +91,93 @@ def relative_humidity_from_dewpoint(
     return (e / e_s)
 
 
-class AwcWeatherStationDataDownloader(AbstractDownloader):
+class DateRollingCsvDownloader(abc.ABC):
+
+    def __init__(
+        self,
+        target_dir: os.PathLike = "data",
+    ):
+        super().__init__()
+        self.target_dir = Path(target_dir)
+        self.target_dir.mkdir(parents=True, exist_ok=True)
+        self.data = []
+
+    def _dump_data(self):
+        self.data = self._deduplicate_data(self.data)
+        data_by_date = self._group_data_by_date()
+        dates = sorted(data_by_date.keys())
+        logger.warning(
+            f"Downloader contains data from "
+            f"{len(dates)} days: "
+            f"{dates}"
+        )
+        # Merge data with existing data and dump them
+        for date in dates:
+            data_file_path = self._ensure_data_file(date)
+            data = self._load_data_from_file(data_file_path)
+            data.extend(data_by_date[date])
+            data = self._deduplicate_data(data)
+            self._dump_data_in_file(data, data_file_path)
+        self.data = []
+
+    @abc.abstractmethod
+    def _deduplicate_data(
+        self,
+        data: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _group_data_by_date(self) -> Dict[str, List[Dict[str, str]]]:
+        raise NotImplementedError
+
+    def _ensure_data_file(
+        self,
+        date: Optional[str] = None,
+    ) -> Path:
+        if not date:
+            date = datetime.utcnow().strftime("%Y%m%d")
+        datetime.strptime(date, "%Y%m%d") # Will raise if invalid
+        save_dir = self.target_dir / date[:4] / date[4:6]
+        save_dir.mkdir(parents=True, exist_ok=True)
+        data_file_path = save_dir / f"{date}.csv"
+        if not data_file_path.exists():
+            data_file_path.touch()
+        return data_file_path
+
+    def _load_data_from_file(
+        self,
+        file_path: os.PathLike,
+    ) -> List[Dict[str, str]]:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File {file_path} not found")
+        with file_path.open('r') as f:
+            reader = csv.DictReader(f, delimiter=',')
+            return list(reader)
+
+    def _dump_data_in_file(
+        self,
+        data: List[Dict[str, str]],
+        file_path: os.PathLike,
+    ):
+        file_path = Path(file_path)
+        with file_path.open('w') as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=self._get_csv_fields(),
+                delimiter=',',
+            )
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
+
+    @abc.abstractmethod
+    def _get_csv_fields(self) -> List[str]:
+        raise NotImplementedError
+
+
+class MetarCsvDownloader(DateRollingCsvDownloader):
 
     FIELDS: List[str] = [
         'timestamp',
@@ -103,60 +189,35 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
     ]
 
     def __init__(
-            self,
-            stations: Dict[str, Station],
-            target_dir: os.PathLike = "data",
-        ):
-        super().__init__()
-        self.stations = stations
-        self.target_dir = Path(target_dir)
-        self.target_dir.mkdir(parents=True, exist_ok=True)
-        self.data = []
-
-    def download1(
         self,
-        stations_to_search: List[Station],
-        from_datetime: Optional[datetime] = None,
-        hours: int = 0,
-    ) -> bool:
-        base_url = "https://www.aviationweather.gov/metar/data"
-        params = {
-            'ids': ",".join([s.code4 for s in stations_to_search]),
-            'format': "raw",
-            'hours': hours,
-            'taf': "off",
-            'layout': "off",
-        }
-        if isinstance(from_datetime, datetime):
-            params['date'] = from_datetime.strftime("%Y%m%d%H%M")
+        stations: Dict[str, Station],
+        target_dir: os.PathLike = "data",
+    ):
+        super().__init__(target_dir=target_dir)
+        self.stations = stations
 
-        try:
-            res = requests.get(base_url, params=params)
-            res.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            logger.error(
-                f"Failed to fetch data from {base_url} "
-                f"with params {params}. "
-                f"Status code: {e.response.status_code}."
-                f"Error: {e}"
-            )
-            return False
-        except requests.exceptions.ConnectionError as e:
-            logger.error(
-                f"Failed to connect to {base_url} "
-                f"with params {params}. "
-                f"Error: {e}"
-            )
-            return False
+    def _get_csv_fields(self) -> List[str]:
+        return self.FIELDS
 
-        soup = BeautifulSoup(res.text, 'html.parser')
-        for element in soup.find_all('code'):
-            data = self._fetch_data_from_raw_metar(element.text)
-            if data is not None:
-                self.data.append(data)
-        self._dump_data()
+    def _deduplicate_data(
+        self,
+        data: List[Dict[str, str]],
+    ) -> List[Dict[str, str]]:
+        dedup = {}
+        for row in data:
+            if row['rawmetar'] not in dedup:
+                dedup[row['rawmetar']] = row
+        return list(dedup.values())
 
-        return True
+    def _group_data_by_date(self) -> Dict[str, List[Dict[str, str]]]:
+        data_by_date = {}
+        for row in self.data:
+            dt = datetime.fromtimestamp(float(row['timestamp']))
+            date = dt.strftime("%Y%m%d")
+            if date not in data_by_date:
+                data_by_date[date] = []
+            data_by_date[date].append(row)
+        return data_by_date
 
     def _fetch_data_from_raw_metar(
         self,
@@ -248,77 +309,57 @@ class AwcWeatherStationDataDownloader(AbstractDownloader):
             return None
         return metar.wind_gust.value(units="KT")
 
-    def _dump_data(self):
-        self.data = self._deduplicate_data(self.data)
-        data_by_date = self._group_data_by_date()
-        dates = sorted(data_by_date.keys())
-        logger.warning(
-            f"Downloader contains data from "
-            f"{len(dates)} days: "
-            f"{dates}"
-        )
-        # Merge data with existing data and dump them
-        for date in dates:
-            data_file_path = self._ensure_data_file(date)
-            data = self._load_data_from_file(data_file_path)
-            data.extend(data_by_date[date])
-            data = self._deduplicate_data(data)
-            self._dump_data_in_file(data, data_file_path)
-        self.data = []
 
-    def _deduplicate_data(
+class AviationWeatherCenterMetarDownloader(MetarCsvDownloader):
+
+    def __init__(
         self,
-        data: List[Dict[str, str]],
-    ) -> List[Dict[str, str]]:
-        dedup = {}
-        for row in data:
-            if row['rawmetar'] not in dedup:
-                dedup[row['rawmetar']] = row
-        return list(dedup.values())
-
-    def _group_data_by_date(self) -> Dict[str, List[Dict[str, str]]]:
-        data_by_date = {}
-        for row in self.data:
-            dt = datetime.fromtimestamp(float(row['timestamp']))
-            date = dt.strftime("%Y%m%d")
-            if date not in data_by_date:
-                data_by_date[date] = []
-            data_by_date[date].append(row)
-        return data_by_date
-
-    def _ensure_data_file(
-        self,
-        date: Optional[str] = None,
-    ) -> Path:
-        if not date:
-            date = datetime.utcnow().strftime("%Y%m%d")
-        datetime.strptime(date, "%Y%m%d") # Will raise if invalid
-        save_dir = self.target_dir / date[:4] / date[4:6]
-        save_dir.mkdir(parents=True, exist_ok=True)
-        data_file_path = save_dir / f"{date}.csv"
-        if not data_file_path.exists():
-            data_file_path.touch()
-        return data_file_path
-
-    def _load_data_from_file(
-        self,
-        file_path: os.PathLike,
-    ) -> List[Dict[str, str]]:
-        file_path = Path(file_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File {file_path} not found")
-        with file_path.open('r') as f:
-            reader = csv.DictReader(f, delimiter=',')
-            return list(reader)
-
-    def _dump_data_in_file(
-        self,
-        data: List[Dict[str, str]],
-        file_path: os.PathLike,
+        stations: Dict[str, Station],
+        target_dir: os.PathLike = "data",
     ):
-        file_path = Path(file_path)
-        with file_path.open('w') as f:
-            writer = csv.DictWriter(f, fieldnames=self.FIELDS, delimiter=',')
-            writer.writeheader()
-            for row in data:
-                writer.writerow(row)
+        super().__init__(stations, target_dir)
+
+    def download1(
+        self,
+        stations_to_search: List[Station],
+        from_datetime: Optional[datetime] = None,
+        hours: int = 0,
+    ) -> bool:
+        base_url = "https://www.aviationweather.gov/metar/data"
+        params = {
+            'ids': ",".join([s.code4 for s in stations_to_search]),
+            'format': "raw",
+            'hours': hours,
+            'taf': "off",
+            'layout': "off",
+        }
+        if isinstance(from_datetime, datetime):
+            params['date'] = from_datetime.strftime("%Y%m%d%H%M")
+
+        try:
+            res = requests.get(base_url, params=params)
+            res.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            logger.error(
+                f"Failed to fetch data from {base_url} "
+                f"with params {params}. "
+                f"Status code: {e.response.status_code}."
+                f"Error: {e}"
+            )
+            return False
+        except requests.exceptions.ConnectionError as e:
+            logger.error(
+                f"Failed to connect to {base_url} "
+                f"with params {params}. "
+                f"Error: {e}"
+            )
+            return False
+
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for element in soup.find_all('code'):
+            data = self._fetch_data_from_raw_metar(element.text)
+            if data is not None:
+                self.data.append(data)
+        self._dump_data()
+
+        return True

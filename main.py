@@ -8,7 +8,7 @@ import click
 
 from ingestion import (
     fetch_stations,
-    AwcWeatherStationDataDownloader,
+    AviationWeatherCenterMetarDownloader,
 )
 from ingestion.logger import logger
 
@@ -39,7 +39,7 @@ def main():
 )
 def poll(hours, interval):
     stations = fetch_stations() # 9319 stations
-    downloader = AwcWeatherStationDataDownloader(
+    downloader = AviationWeatherCenterMetarDownloader(
         stations=stations,
         target_dir=data_workspace,
     )
@@ -71,7 +71,7 @@ def poll(hours, interval):
 )
 def fill(from_datetime, hours):
     stations = fetch_stations() # 9318 stations
-    downloader = AwcWeatherStationDataDownloader(
+    downloader = AviationWeatherCenterMetarDownloader(
         stations=stations,
         target_dir=data_workspace,
     )

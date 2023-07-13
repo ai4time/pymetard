@@ -17,6 +17,8 @@ from ingestion.timer import (
 
 from ingestion.awc import (
     fetch_stations,
-    AwcWeatherStationDataDownloader,
+    AviationWeatherCenterMetarDownloader,
+    DateRollingCsvDownloader,
+    MetarCsvDownloader,
     Station,
 )
