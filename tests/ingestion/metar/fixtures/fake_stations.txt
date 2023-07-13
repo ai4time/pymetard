@@ -1,0 +1,25 @@
+! Fake stations following the format of the METAR station list.
+! Source: https://www.aviationweather.gov/docs/metar/stations.txt
+!
+! The file contains 5 types of lines:
+!  1) Comment lines (starting with a '!').
+!  2) Empty lines.
+!  3) State or country lines with name and an update date.
+!  4) Header lines with column names (start with 'CD  ').
+!  5) Station data lines with a strcitly fixed length for every column and a total length = 84.
+!23456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
+!
+
+PERFECT COUNTRY    14-DEC-20                                                  
+CD  STATION         ICAO  IATA  SYNOP   LAT     LONG   ELEV   M  N  V  U  A  C
+PC STATION1         PCSA  CSA   70454  51 53N  176 39W    3   X     T          7 NA
+PC STATION2                     70027  71 19N  156 37W    7            X       8 NA
+
+A PARK             19-AUG-13
+   STATION3         APSC        78650  13 34N  089 50E   14   X                7 NA
+
+AN ISLAND          15-JUL-21
+   STATION4         AISD  IND   94387  24 54S  152 19E   30   X                8 NA
+
+NOWHERE            01-JAN-01
+   STATION5         NWSE  NWE   94387  34 34S  058 25W 3462   X                7 NA
