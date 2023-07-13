@@ -367,11 +367,19 @@ class WeatherGovMetarDownloader(MetarCsvDownloader):
             raw_metars.extend(station['OBSERVATIONS']['metar_set_1'])
 
         for raw_metar in raw_metars:
-            data = self._fetch_data_from_raw_metar(
-                raw_metar,
-                year=start_datetime.year,
-                month=start_datetime.month,
-            )
+            try:
+                data = self._fetch_data_from_raw_metar(
+                    raw_metar,
+                    year=start_datetime.year,
+                    month=start_datetime.month,
+                )
+            except Exception as e:
+                logger.error(
+                    "[FATAL] "
+                    f"Failed to parse raw METAR {raw_metar}. "
+                    f"Error: {e}"
+                )
+                continue
             if data is not None:
                 self.data.append(data)
 
