@@ -287,6 +287,13 @@ class AviationWeatherCenterMetarDownloader(MetarCsvDownloader):
             )
             return False
 
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for element in soup.find_all('code'):
+            data = self._fetch_data_from_raw_metar(element.text)
+            if data is not None:
+                self.data.append(data)
+        self._dump_data()
+
         return True
 
 
