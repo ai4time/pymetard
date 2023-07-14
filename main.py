@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 import anylearn
 import click
 
-from ingestion import (
+from pymetard import (
     fetch_stations,
     AviationWeatherCenterMetarDownloader,
     WeatherGovMetarDownloader,
 )
-from ingestion.logger import logger
+from pymetard.logger import logger
 
 
 if os.environ.get('ANYLEARN_TASK_ID', None) is not None:

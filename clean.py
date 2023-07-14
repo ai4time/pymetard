@@ -5,7 +5,7 @@ from pathlib import Path
 
 import anylearn
 
-from ingestion import fetch_stations
+from pymetard import fetch_stations
 
 
 if os.environ.get('ANYLEARN_TASK_ID', None) is not None:

@@ -9,8 +9,8 @@ import requests
 from bs4 import BeautifulSoup
 from metar import Metar
 
-from ingestion.logger import logger
-from ingestion.metar import (
+from pymetard.logger import logger
+from pymetard.metar import (
     relative_humidity_from_dewpoint,
     Station,
 )

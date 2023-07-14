@@ -2,7 +2,7 @@ from pathlib import Path
 
 from unittest import TestCase
 
-from ingestion import fetch_stations, Station
+from pymetard import fetch_stations, Station
 
 
 class TestStation(TestCase):

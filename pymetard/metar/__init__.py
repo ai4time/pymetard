@@ -1,14 +1,14 @@
-from ingestion.metar.station import (
+from pymetard.metar.station import (
     fetch_stations,
     Station,
 )
 
-from ingestion.metar.meteo import (
+from pymetard.metar.meteo import (
     relative_humidity_from_dewpoint,
     saturation_vapor_pressure,
 )
 
-from ingestion.metar.downloader import (
+from pymetard.metar.downloader import (
     AviationWeatherCenterMetarDownloader,
     DateRollingCsvDownloader,
     MetarCsvDownloader,
