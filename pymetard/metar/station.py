@@ -32,7 +32,7 @@ def _lat(latstr: str) -> float:
 
 
 def fetch_stations(
-    station_file_path: os.PathLike = "./data/stations.txt",
+    station_file_path: os.PathLike = Path(__file__).parent / "stations.txt",
 ) -> Dict[str, Station]:
     station_file_path = Path(station_file_path)
     if not station_file_path.exists():
