@@ -112,9 +112,7 @@ def batch(start, end):
         target_dir=data_workspace,
     )
 
-    # URL length limit ~8000
-    # while each station = 4 digits code + 1 comma encoded in %2C
-    CHUNK_SIZE = 1050
+    CHUNK_SIZE = 500
     N = math.ceil(len(stations.keys()) / CHUNK_SIZE)
 
     _start = start
