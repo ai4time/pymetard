@@ -116,7 +116,11 @@ def batch(start, end):
     N = math.ceil(len(stations.keys()) / CHUNK_SIZE)
 
     _start = start
-    if start.day == end.day:
+    if all([
+        _start.year == end.year,
+        _start.month == end.month,
+        _start.day == end.day,
+    ]):
         _end = end
     else:
         _end = datetime(
@@ -139,7 +143,11 @@ def batch(start, end):
             logger.info(f"Downloaded {int(1+i/CHUNK_SIZE)}/{N}")
             time.sleep(10)
         _start = _end + timedelta(minutes=1)
-        if _start.day == end.day:
+        if all([
+            _start.year == end.year,
+            _start.month == end.month,
+            _start.day == end.day,
+        ]):
             _end = end
         else:
             _end = datetime(
