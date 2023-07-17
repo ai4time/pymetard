@@ -364,6 +364,21 @@ class WeatherGovMetarDownloader(MetarCsvDownloader):
                 f"Error: {e}"
             )
             return False
+        except requests.exceptions.JSONDecodeError as e:
+            logger.error(
+                f"Failed to decode JSON response from {base_url} "
+                f"with params {params}. "
+                f"Response: {res.text}. "
+                f"Error: {e}"
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                f"Failed to fetch data from {base_url} "
+                f"with params {params}. "
+                f"Error: {e}"
+            )
+            return False
 
         raw_metars = []
         for station in raw_json['STATION']:
