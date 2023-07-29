@@ -151,6 +151,7 @@ class MetarCsvDownloader(DateRollingCsvDownloader):
         month: Optional[int] = None,
     ) -> Optional[Dict[str, str]]:
         logger.debug(f"Parsing raw METAR: {metar_raw}")
+        metar_raw = self._clean_raw_metar(metar_raw)
         metar_decoded = Metar.Metar(
             metar_raw,
             year=year,
@@ -194,6 +195,9 @@ class MetarCsvDownloader(DateRollingCsvDownloader):
         )
 
         return data
+
+    def _clean_raw_metar(self, metar_raw: str) -> str:
+        return metar_raw.replace("\x00", "")
 
     def _metar_valid(self, metar: Metar.Metar) -> bool:
         return metar.time is not None
